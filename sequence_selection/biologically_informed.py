@@ -7,7 +7,8 @@ from tqdm import tqdm
 from models.model_utils import load_model
 from models.dl_utils import prepare_dataloader
 
-def max_expression(species: str,
+def max_expression(out_path: str,
+                    species: str,
                     arch: str,
                     seed: int,
                     num_selected: int,
@@ -20,7 +21,6 @@ def max_expression(species: str,
     generator.manual_seed(seed)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # remember original=True for human
     original = species == 'human'
     model=load_model(species=species,arch=arch,al_method='common',seed=seed,round='0',original=original)
     model.to(device).eval()
@@ -46,7 +46,7 @@ def max_expression(species: str,
     df['pred']=all_preds
     df_new=df.sort_values(by=['pred'],ascending=lowest)
     result=df_new[:num_selected]
-    result.to_csv(f'{DATA_ROOT}/{species}_maxpred_expr_{seed}.tsv',sep='\t',index=None,header=None,columns=[0,1])
+    result.to_csv(out_path,sep='\t',index=None,header=None,columns=[0,1])
 
 def ism(file_path: str, out_path: str, dataset: str, job_id: int, seqs_per_job: int=1_000_000, window_sz: int=6, arch: str='rnn'):
     df = pd.read_csv(file_path, header=None, sep='\t')
