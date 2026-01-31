@@ -48,15 +48,16 @@ def max_expression(out_path: str,
     result=df_new[:num_selected]
     result.to_csv(out_path,sep='\t',index=None,header=None,columns=[0,1])
 
-def ism(file_path: str, out_path: str, dataset: str, job_id: int, seqs_per_job: int=1_000_000, window_sz: int=6, arch: str='rnn'):
+def ism(file_path: str, out_path: str, dataset: str, job_id: int, window_sz: int=6, arch: str='rnn', seed: int=1):
     df = pd.read_csv(file_path, header=None, sep='\t')
     df.columns=['seq','expr']
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if dataset=='human':
-        batch_size=8
+        batch_size=6
         start_pos=0
         end_pos=200
         seqsize=200
+        seqs_per_job=50_000
         original = True
         df= df[df['seq'].str.len()==seqsize]
     else: # yeast
@@ -64,12 +65,14 @@ def ism(file_path: str, out_path: str, dataset: str, job_id: int, seqs_per_job: 
         start_pos=57
         end_pos=137
         seqsize=150
+        seqs_per_job=500_000
         original = False
         left_flank="AGTGCTAGCAGGAATGATGCAAAAGGTTCCCGATTCGAAC"
         df= df[df['seq'].str[:len(left_flank)]==left_flank]
+        df= df[~df['seq'].str.contains('N')]
     df = df.iloc[job_id*seqs_per_job:(job_id+1)*seqs_per_job]
 
-    model=load_model(species=dataset,arch=arch,al_method='common',seed=1,round='0',original=original)
+    model=load_model(species=dataset,arch=arch,al_method='common',seed=seed,round='0',original=original)
     model.to(device).eval()
 
     attrs = []
@@ -87,7 +90,7 @@ def ism(file_path: str, out_path: str, dataset: str, job_id: int, seqs_per_job: 
                                               device=device)
             
             y_attr = y_ism - y[:, None, None] 
-            attrs.append(y_attr.squeeze().cpu().detach().numpy())
+            attrs.append(y_attr.squeeze().cpu().numpy())
             buffer=[]
     if buffer:
         X=torch.cat(buffer,dim=0)
@@ -98,7 +101,7 @@ def ism(file_path: str, out_path: str, dataset: str, job_id: int, seqs_per_job: 
                                           device=device)
         
         y_attr = y_ism - y[:, None, None] 
-        attrs.append(y_attr.squeeze().cpu().detach().numpy())
+        attrs.append(y_attr.squeeze().cpu().numpy())
     
     attrs=np.concatenate(attrs,axis=0)
     result=compute_attributions(attrs,window_sz)
@@ -125,7 +128,6 @@ def saturation_mutagenesis(model, X, start=0, end=-1, device='cuda'):
     N, C, L = X.shape
     if end < 0:
         end = L + end + 1
-    n_mut = (end - start) * 3
     
     X_mut = [_edit_distance_one(X[i], start, end) for i in range(N)]
     X_mut = torch.cat(X_mut, dim=0)   # (N * n_mut, C, L)
@@ -135,7 +137,7 @@ def saturation_mutagenesis(model, X, start=0, end=-1, device='cuda'):
     dtype = next(model.parameters(), X).dtype
     
     with torch.inference_mode():
-        y = model.predict(X_all.to(device).type(dtype)).cpu()
+        y = model.predict(X_all.to(device).type(dtype))
 
     y0 = y[:N]
     y_hat = y[N:].view(N,end-start, 3, *y.shape[1:])
@@ -163,10 +165,11 @@ def seq2tensor(seq,dataset):
     return X
 def compute_attributions(attrs,window_sz):
     attrs=-attrs.mean(axis=2) # average across substitutions
+    abs_attrs=np.abs(attrs)
     N,L=attrs.shape
     
-    _mean=attrs.mean(axis=1)
-    maxpos=np.abs(attrs).argmax(axis=1)
+    _mean=abs_attrs.mean(axis=1)
+    maxpos=abs_attrs.argmax(axis=1)
     _max=attrs[np.arange(N),maxpos]
     
     windows = np.lib.stride_tricks.sliding_window_view(attrs, window_sz, axis=1)
