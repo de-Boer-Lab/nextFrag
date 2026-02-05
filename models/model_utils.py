@@ -3,8 +3,8 @@ import torch.nn as nn
 from pathlib import Path
 from . import dream_models
 
-def init_model(species: str, arch: str) -> nn.Module:
-    match species:
+def init_model(dataset: str, arch: str) -> nn.Module:
+    match dataset:
         case 'yeast':
             seqsize=150
             num_channels = 6
@@ -14,18 +14,18 @@ def init_model(species: str, arch: str) -> nn.Module:
 
     match arch:
         case 'rnn':
-            return dream_models.DREAM_RNN(in_channels=num_channels,final_block=species, seqsize=seqsize)
+            return dream_models.DREAM_RNN(in_channels=num_channels,final_block=dataset, seqsize=seqsize)
         case 'cnn':
-            return dream_models.DREAM_CNN(in_channels=num_channels,final_block=species,seqsize=seqsize)
+            return dream_models.DREAM_CNN(in_channels=num_channels,final_block=dataset,seqsize=seqsize)
         case 'attn':
-            return dream_models.DREAM_ATTN(in_channels=num_channels,final_block=species,seqsize=seqsize)
+            return dream_models.DREAM_ATTN(in_channels=num_channels,final_block=dataset,seqsize=seqsize)
         case _:
             raise ValueError("Model architecture must be 'cnn','rnn', or 'attn'")
 
-def load_model(species: str,
+def load_model(dataset: str,
                arch: str,
                path: str | Path = None, 
-               al_method: str = None,
+               al_strategy: str = None,
                seed: int = 42,
                round: int = None) -> nn.Module:
     '''
@@ -33,7 +33,7 @@ def load_model(species: str,
     can construct a path with al_method, seed, round
     '''
 
-    model = init_model(species=species, arch=arch)
+    model = init_model(dataset=dataset, arch=arch)
     if path is not None:
         filepath=path
     else: # infer from other params

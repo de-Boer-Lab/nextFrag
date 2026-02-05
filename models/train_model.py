@@ -5,39 +5,39 @@ from .trainer import Trainer
 from .model_utils import init_model
 from .evaluation import eval_model
 
-def train_model(species: str, 
+def train_model(dataset: str, 
                 arch: str, 
                 model_path: str | Path = None,
-                al_method: str=None,
+                al_strategy: str=None,
                 round: int=None,
                 seed: int=42,
                 num_epochs: int = 80):
-    train_path = f"data/{species}/demo_train.txt" # replace with actual path
-    val_path = f"data/{species}/demo_val.txt" # replace with actual path
-    seqsize = 200 if species == 'human' else 150
-    train_batch_sz = 32
+    train_path = f"data/{dataset}/demo_train.txt" # replace with actual path
+    val_path = f"data/{dataset}/demo_val.txt" # replace with actual path
+    seqsize = 200 if dataset == 'human' else 150
+    train_batch_sz = 32 if dataset == 'human' else 256
     valid_batch_sz = 4096
     lr = 0.001 if arch == 'attn' else 0.005
 
     if model_path is not None:
         model_dir = model_path 
     else:
-        pass # infer from other args, e.g. /model_root/{species}/{round}/{al_method}/{arch}_{seed}
+        pass # infer from other args, e.g. /model_root/{dataset}/{round}/{al_strategy}/{arch}_{seed}
 
     generator = torch.Generator()
     generator.manual_seed(seed)
 
-    model=init_model(species=species,arch=arch)
+    model=init_model(dataset=dataset,arch=arch)
 
     train_dl = prepare_dataloader(train_path, 
                                 seqsize=seqsize,
-                                species=species,
+                                dataset=dataset,
                                 batch_size=train_batch_sz,
                                 shuffle = True,
                                 generator=generator)
     val_dl = prepare_dataloader(val_path, 
                                 seqsize=seqsize, 
-                                species=species,
+                                species=dataset,
                                 batch_size=valid_batch_sz,
                                 shuffle=False)
 
@@ -55,15 +55,15 @@ def train_model(species: str,
 
     return eval_model(model_path=f"{model_dir}/model_best.pth",
                     out_file= f"{model_dir}/results.txt",
-                    species=species,
+                    dataset=dataset,
                     arch=arch)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("species",choices=['yeast','human'])
+    parser.add_argument("dataset",choices=['yeast','human'])
     parser.add_argument("arch",choices=['cnn', 'rnn', 'attn'])
     parser.add_argument("--model_path",type=str)
-    parser.add_argument("--al_method",type=str)
+    parser.add_argument("--al_strategy",type=str)
     parser.add_argument("--round",type=int)
     parser.add_argument("--seed",type=int)
     args = parser.parse_args()
@@ -73,13 +73,13 @@ def main():
         print(f"  {name}: {value}")
 
     if args.model_path is not None:
-        return train_model(species=args.species,
+        return train_model(dataset=args.dataset,
                            arch=args.arch,
                            model_path=args.model_path)
     else:
-        return train_model(species=args.species,
+        return train_model(dataset=args.dataset,
                            arch=args.arch,
-                           al_method=args.al_method,
+                           al_strategy=args.al_strategy,
                            round=args.round,
                            seed=args.seed)
 

@@ -114,7 +114,7 @@ def evaluate_yeast_predictions(expressions,result_file: str):
 def eval_human_model(arch: str, 
                      model_path: str | Path = None, 
                      out_file: str | Path = None, 
-                     al_method: str = None, 
+                     al_strategy: str = None, 
                      round: int = None, 
                      seed: int = None, 
                      batch_size: int=4096):
@@ -141,10 +141,10 @@ def eval_human_model(arch: str,
                                 shuffle=False)
     if model_path is not None:
         model=load_model(path=model_path,species='human',arch=arch)
-    else: # model path inferred from arch, al_method, etc
+    else: # model path inferred from arch, al_strategy, etc
         model=load_model(species='human',
                         arch=arch,
-                        al_method=al_method,
+                        al_strategy=al_strategy,
                         seed=seed,
                         round=round)
     model.to(device).eval()
@@ -187,7 +187,7 @@ def eval_human_model(arch: str,
 def eval_yeast_model(arch: str,
                      model_path: str | Path = None, 
                      out_file: str | Path = None, 
-                     al_method: str = None, 
+                     al_strategy: str = None, 
                      seed: int = None, 
                      round: int = None, 
                      batch_size: int=4096):
@@ -203,10 +203,10 @@ def eval_yeast_model(arch: str,
     
     if model_path is not None:
         model=load_model(path=model_path,species='yeast',arch=arch)
-    else: # model path inferred from arch, al_method, etc
+    else: # model path inferred from arch, al_strategy, etc
         model=load_model(species='yeast',
                         arch=arch,
-                        al_method=al_method,
+                        al_strategy=al_strategy,
                         seed=seed,
                         round=round)
     model.to(device).eval()
@@ -226,18 +226,18 @@ def eval_yeast_model(arch: str,
         result_file = "data/human/results.txt" # replace with actual path 
     evaluate_yeast_predictions(result,result_file=result_file)
 
-def eval_model(species: str, 
+def eval_model(dataset: str, 
                arch: str, 
                model_path: str | Path = None,
                out_file: str | Path = None,
-               al_method: str = None, 
+               al_strategy: str = None, 
                round: int = None, 
                seed: int = None, 
                batch_size: int=4096):
     '''
-    expects either model_path or (al_method AND round AND seed)
+    expects either model_path or (al_strategy AND round AND seed)
     '''
-    match species:
+    match dataset:
         case 'human':
             eval = eval_human_model
         case 'yeast':
@@ -246,4 +246,4 @@ def eval_model(species: str,
     if model_path is not None:
         return eval(arch=arch,model_path=model_path,out_file=out_file,batch_size=batch_size)
     else: # infer model path from other params
-        return eval(arch=arch,al_method=al_method,round=round,seed=seed,batch_size=batch_size)
+        return eval(arch=arch,al_strategy=al_strategy,round=round,seed=seed,batch_size=batch_size)

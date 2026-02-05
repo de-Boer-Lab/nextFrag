@@ -15,19 +15,19 @@ def update_pool(original_pool:str, selected:str, output:str):
             if line not in selected_seqs:  
                 f2.write(line)
 
-def _update_train_and_pool(species: str,
+def _update_train_and_pool(dataset: str,
                            next_round: int,
-                           al_method: str,
+                           al_strategy: str,
                            arch: str,
                            seed: int,
                            num_rounds: int=3):
     '''
     This function assumes a file structure of:
-    /data_root/{species}/round_{round}/{al_method}/{arch}_{seed}
+    /data_root/{dataset}/round_{round}/{al_strategy}/{arch}_{seed}/data
     containing: selected.txt, train.txt, pool.txt
     '''
-    os.chdir(f"/data_root/{species}") # change to your data root
-    path = f"{al_method}/{arch}_{seed}"
+    os.chdir(f"/data_root/{dataset}")
+    path = f"{al_strategy}/{arch}_{seed}/data"
     
     if next_round>1:
         update_train(original_train=f"round_{next_round-1}/{path}/train.txt",

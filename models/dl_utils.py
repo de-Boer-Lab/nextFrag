@@ -31,11 +31,11 @@ def pad_sequence(seq, seqsize: int) -> str:
 
 def preprocess_data(df: pd.DataFrame, 
                     seqsize: int, 
-                    species: str,
+                    dataset: str,
                     plasmid_path: str | None) -> pd.DataFrame:
-    if species == 'human':
+    if dataset == 'human':
         return preprocess_human_data(df, seqsize=seqsize)
-    elif species == 'yeast':
+    elif dataset == 'yeast':
         assert plasmid_path is not None
         return preprocess_yeast_data(df, seqsize=seqsize, plasmid_path=plasmid_path)
     else:
@@ -99,7 +99,7 @@ def preprocess_tsv(path: str,
                    batch_size: int=1024) -> pd.DataFrame:
     df = pd.read_csv(path, sep="\t", header=None)
     df.columns = ['seq', 'expr']
-    df = preprocess_data(df, seqsize=seqsize, species=species, plasmid_path=plasmid_path)
+    df = preprocess_data(df, seqsize=seqsize, dataset=species, plasmid_path=plasmid_path)
     df = add_revcomp(df,revcomp_same_batch=revcomp_same_batch,batch_size=batch_size)
     if species == 'yeast':
         df = add_singleton_column(df)
@@ -214,5 +214,7 @@ def prepare_dataloader(
     )
 
     if batch_per_epoch is not None:
+        if batch_per_epoch == -1: # use half batch
+            batch_per_epoch = math.ceil(len(dataloader)/2)
         return DataloaderWrapper(dataloader, batch_per_epoch)
     return dataloader
