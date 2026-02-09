@@ -31,11 +31,11 @@ def pad_sequence(seq, seqsize: int) -> str:
 
 def preprocess_data(df: pd.DataFrame, 
                     seqsize: int, 
-                    dataset: str,
+                    dset: str,
                     plasmid_path: str | None) -> pd.DataFrame:
-    if dataset == 'human':
+    if dset == 'human':
         return preprocess_human_data(df, seqsize=seqsize)
-    elif dataset == 'yeast':
+    elif dset == 'yeast':
         assert plasmid_path is not None
         return preprocess_yeast_data(df, seqsize=seqsize, plasmid_path=plasmid_path)
     else:
@@ -93,15 +93,15 @@ def add_singleton_column(df: pd.DataFrame) -> pd.DataFrame:
 
 def preprocess_tsv(path: str, 
                    seqsize: int, 
-                   species: str,
+                   dset: str,
                    plasmid_path: str | None,
                    revcomp_same_batch: bool=False,
                    batch_size: int=1024) -> pd.DataFrame:
     df = pd.read_csv(path, sep="\t", header=None)
     df.columns = ['seq', 'expr']
-    df = preprocess_data(df, seqsize=seqsize, dataset=species, plasmid_path=plasmid_path)
+    df = preprocess_data(df, seqsize=seqsize, dset=dset, plasmid_path=plasmid_path)
     df = add_revcomp(df,revcomp_same_batch=revcomp_same_batch,batch_size=batch_size)
-    if species == 'yeast':
+    if dset == 'yeast':
         df = add_singleton_column(df)
     return df
 
@@ -110,14 +110,14 @@ class SeqExprDataset(torch.utils.data.Dataset):
     
     def __init__(self, 
                  df: pd.DataFrame, 
-                 species: str,
+                 dset: str,
                  seqsize: int,
                  use_single_channel: bool=False,
                  use_reverse_channel: bool=True,
                  shift: float=0.5, 
                  scale: float=0.5):
         self.df = df.reset_index(drop=True)
-        self.species = species
+        self.dset = dset
         self.encoder = Seq2Tensor()
         self.seqsize = seqsize
         self.use_single_channel = use_single_channel
@@ -151,7 +151,7 @@ class SeqExprDataset(torch.utils.data.Dataset):
             X = seq
         
         y = torch.tensor(row['expr'], dtype=torch.float32)
-        if self.species == 'human':
+        if self.dset == 'human':
             return {"x": X.float(), "y": y}
         else: # yeast           
             norm = scipy.stats.norm(loc=y + self.shift,
@@ -183,7 +183,7 @@ class DataloaderWrapper:
 def prepare_dataloader(
     tsv_path: str,
     seqsize: int,
-    species: str,
+    dset: str,
     plasmid_path: str = 'data/yeast/plasmid.json',
     batch_size: int = 1024,
     num_workers: int = 4,
@@ -195,13 +195,13 @@ def prepare_dataloader(
     
     df = preprocess_tsv(path=tsv_path, 
                         seqsize=seqsize,
-                        species=species,
+                        dset=dset,
                         plasmid_path=plasmid_path,
                         revcomp_same_batch=revcomp_same_batch,
                         batch_size=batch_size)
-    use_single_channel = species == 'yeast'
+    use_single_channel = dset == 'yeast'
     dataset = SeqExprDataset(df=df, 
-                             species=species,
+                             dset=dset,
                              seqsize=seqsize,
                              use_single_channel=use_single_channel)
     

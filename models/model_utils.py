@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from pathlib import Path
 from . import dream_models
+from ..config import PROJECT_ROOT
 
 def init_model(dataset: str, arch: str) -> nn.Module:
     match dataset:
@@ -27,17 +28,16 @@ def load_model(dataset: str,
                path: str | Path = None, 
                al_strategy: str = None,
                seed: int = 42,
-               round: int = None) -> nn.Module:
+               round_num: int = None) -> nn.Module:
     '''
     expects either a path to a model.pth file OR 
-    can construct a path with al_method, seed, round
+    constructs path with round_num, al_strategy, seed
     '''
-
     model = init_model(dataset=dataset, arch=arch)
     if path is not None:
         filepath=path
-    else: # infer from other params
-        pass # e.g. /data_root/{species}/{round}/{al_method}/{arch}_{seed}/model_best.pth
+    else: 
+        filepath = PROJECT_ROOT / dataset / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'model_best.pth'
     if torch.cuda.is_available():
         model.load_state_dict(torch.load(filepath, weights_only=True))
     else: # cpu

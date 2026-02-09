@@ -90,10 +90,10 @@ class Trainer:
         }
         return metrics
 
-    def save_model(self, epoch: str):
-        torch.save(self.model.state_dict(), self.model_dir / f"model_{epoch}.pth")
-        torch.save(self.optimizer.state_dict(), self.model_dir / f"optimizer_{epoch}.pth")
-        torch.save(self.scheduler.state_dict(), self.model_dir / f"scheduler_{epoch}.pth")
+    def save_model(self, name: str):
+        torch.save(self.model.state_dict(), self.model_dir / f"model_{name}.pth")
+        torch.save(self.optimizer.state_dict(), self.model_dir / f"optimizer_{name}.pth")
+        torch.save(self.scheduler.state_dict(), self.model_dir / f"scheduler_{name}.pth")
 
     def fit(self):
         for epoch in tqdm(range(1, self.num_epochs + 1)):
@@ -115,5 +115,7 @@ class Trainer:
 
                 if metrics["pearsonr"] > self.best_pearson:
                     self.best_pearson = metrics["pearsonr"]
-                    self.save_model("best")
-            # self.save_model(f"{epoch}")
+                    self.save_model("best")        
+        for file in ['optimizer_best.pth','scheduler_best.pth']:
+            filepath = self.model_dir / file
+            filepath.unlink() 

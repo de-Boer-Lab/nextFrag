@@ -6,8 +6,9 @@ from scipy.stats import pearsonr, spearmanr
 from collections import OrderedDict
 from .dl_utils import prepare_dataloader
 from .model_utils import load_model
+from ..config import PROJECT_ROOT
 
-dirname = os.path.dirname(__file__)
+MODULE_DIR = Path(__file__).parent
 
 def load_ground_truth(filename: str | Path) -> np.ndarray:
     with open(filename) as f:
@@ -42,7 +43,6 @@ def calculate_correlations(index_list, expressions, GROUND_TRUTH_EXP):
 
     return pearson, spearman
 
-
 def calculate_diff_correlations(pair_list, expressions, GROUND_TRUTH_EXP):
     Y_pred_selected = []
     expressions_selected = []
@@ -60,18 +60,21 @@ def calculate_diff_correlations(pair_list, expressions, GROUND_TRUTH_EXP):
 
     return pearson, spearman
 
-def evaluate_yeast_predictions(expressions,result_file: str):
+def evaluate_yeast_predictions(expressions, result_file: str | Path):
     expressions = np.array(expressions)
-    GROUND_TRUTH_EXP = load_ground_truth(os.path.join(dirname,'../data/yeast/test.txt'))
+    data_dir = MODULE_DIR.parent / 'data' / 'yeast'
+    subset_ids_dir = data_dir / 'test_subset_ids'
+
+    GROUND_TRUTH_EXP = load_ground_truth(data_dir / 'test.txt')
     # Load indices for different promoter classes
-    high = load_promoter_class_indices(os.path.join(dirname,'../data/yeast/test_subset_ids/high_exp_seqs.csv'))
-    low = load_promoter_class_indices(os.path.join(dirname,'../data/yeast/test_subset_ids/low_exp_seqs.csv'))
-    yeast = load_promoter_class_indices(os.path.join(dirname,'../data/yeast/test_subset_ids/yeast_seqs.csv'))
-    random = load_promoter_class_indices(os.path.join(dirname,'../data/yeast/test_subset_ids/all_random_seqs.csv'))
-    challenging = load_promoter_class_indices(os.path.join(dirname,'../data/yeast/test_subset_ids/challenging_seqs.csv'))
-    SNVs = load_promoter_class_indices(os.path.join(dirname,'../data/yeast/test_subset_ids/all_SNVs_seqs.csv'))
-    motif_perturbation = load_promoter_class_indices(os.path.join(dirname,'../data/yeast/test_subset_ids/motif_perturbation_seqs.csv'))
-    motif_tiling = load_promoter_class_indices(os.path.join(dirname,'../data/yeast/test_subset_ids/motif_tiling_seqs.csv'))
+    high = load_promoter_class_indices(subset_ids_dir / 'high_exp_seqs.csv')
+    low = load_promoter_class_indices(subset_ids_dir / 'low_exp_seqs.csv')
+    yeast = load_promoter_class_indices(subset_ids_dir / 'yeast_seqs.csv')
+    random = load_promoter_class_indices(subset_ids_dir / 'all_random_seqs.csv')
+    challenging = load_promoter_class_indices(subset_ids_dir / 'challenging_seqs.csv')
+    SNVs = load_promoter_class_indices(subset_ids_dir / 'all_SNVs_seqs.csv')
+    motif_perturbation = load_promoter_class_indices(subset_ids_dir / 'motif_perturbation_seqs.csv')
+    motif_tiling = load_promoter_class_indices(subset_ids_dir / 'motif_tiling_seqs.csv')
 
     final_all = list(range(len(GROUND_TRUTH_EXP)))
 
@@ -98,7 +101,9 @@ def evaluate_yeast_predictions(expressions,result_file: str):
                     + 0.3 * random_spearman + 0.5 * challenging_spearman + 1.25 * SNVs_spearman
                     + 0.3 * motif_perturbation_spearman + 0.4 * motif_tiling_spearman) / 4.65
 
-    # Print scores
+    # Write results
+    result_file = Path(result_file)
+    result_file.parent.mkdir(parents=True, exist_ok=True)
     with open(result_file, 'w') as f:
         f.write(f'Pearson Score\t{pearsons_score}\n')
         f.write(f'all r\t{pearson}\n')
@@ -114,39 +119,39 @@ def evaluate_yeast_predictions(expressions,result_file: str):
 def eval_human_model(arch: str, 
                      model_path: str | Path = None, 
                      out_file: str | Path = None, 
-                     al_strategy: str = None, 
-                     round: int = None, 
+                     al_strategy: str = None,
+                     round_num: int = None, 
                      seed: int = None, 
-                     batch_size: int=4096):
-    test_path_ID = f"data/human/demo_test.txt" # replace with actual path
-    test_path_OOD = f"data/human/demo_test.txt"  # replace with actual path
-    test_path_SNV = f"data/human/demo_test_snv.txt" # replace with actual path
+                     batch_size: int=2048):
+    test_path_ID = "data/human/demo_test.txt" # replace with actual path
+    test_path_OOD = "data/human/demo_test.txt"  # replace with actual path
+    test_path_SNV = "data/human/demo_test_snv.txt"  # replace with actual path 
     seqsize = 200
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     test_ID_dl = prepare_dataloader(test_path_ID, 
-                                seqsize=seqsize, 
-                                species='human',
-                                batch_size=batch_size,
-                                shuffle=False)
+                                    seqsize=seqsize, 
+                                    dset='human',
+                                    batch_size=batch_size,
+                                    shuffle=False)
     test_OOD_dl = prepare_dataloader(test_path_OOD, 
-                                seqsize=seqsize, 
-                                species='human',
-                                batch_size=batch_size,
-                                shuffle=False)
+                                    seqsize=seqsize, 
+                                    dset='human',
+                                    batch_size=batch_size,
+                                    shuffle=False)
     test_SNV_dl = prepare_dataloader(test_path_SNV, 
-                                seqsize=seqsize, 
-                                species='human',
-                                batch_size=batch_size,
-                                shuffle=False)
+                                    seqsize=seqsize, 
+                                    dset='human',
+                                    batch_size=batch_size,
+                                    shuffle=False)
     if model_path is not None:
-        model=load_model(path=model_path,species='human',arch=arch)
+        model=load_model(path=model_path,dataset='human',arch=arch)
     else: # model path inferred from arch, al_strategy, etc
-        model=load_model(species='human',
-                        arch=arch,
-                        al_strategy=al_strategy,
-                        seed=seed,
-                        round=round)
+        model=load_model(dataset='human',
+                         arch=arch,
+                         al_strategy=al_strategy,
+                         seed=seed,
+                         round_num=round_num)
     model.to(device).eval()
 
     all_model_predictions=[]
@@ -178,7 +183,7 @@ def eval_human_model(arch: str,
     if out_file is not None:
         result_file = out_file
     else:
-        result_file = "data/human/results.txt" # replace with actual path 
+        result_file = PROJECT_ROOT / 'human' / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'results.txt'
     with open(result_file, 'w') as f:
         f.write(f"ID\t{final_result[0]}\n")
         f.write(f"OOD\t{final_result[1]}\n")
@@ -189,26 +194,26 @@ def eval_yeast_model(arch: str,
                      out_file: str | Path = None, 
                      al_strategy: str = None, 
                      seed: int = None, 
-                     round: int = None, 
-                     batch_size: int=4096):
-    test_path = f"data/yeast/test.txt" 
+                     round_num: int = None, 
+                     batch_size: int=2048):
+    test_data_path = "data/yeast/test.txt" 
     seqsize = 150
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    test_dl = prepare_dataloader(test_path, 
+    test_dl = prepare_dataloader(test_data_path, 
                                 seqsize=seqsize, 
-                                species='yeast',
+                                dset='yeast',
                                 batch_size=batch_size,
                                 shuffle=False)
     
     if model_path is not None:
-        model=load_model(path=model_path,species='yeast',arch=arch)
+        model=load_model(dataset='yeast',arch=arch,path=model_path)
     else: # model path inferred from arch, al_strategy, etc
-        model=load_model(species='yeast',
+        model=load_model(dataset='yeast',
                         arch=arch,
                         al_strategy=al_strategy,
                         seed=seed,
-                        round=round)
+                        round_num=round_num)
     model.to(device).eval()
 
     with torch.inference_mode():
@@ -223,7 +228,7 @@ def eval_yeast_model(arch: str,
     if out_file is not None:
         result_file = out_file
     else:
-        result_file = "data/human/results.txt" # replace with actual path 
+        result_file = PROJECT_ROOT / 'yeast' / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'results.txt'
     evaluate_yeast_predictions(result,result_file=result_file)
 
 def eval_model(dataset: str, 
@@ -231,11 +236,11 @@ def eval_model(dataset: str,
                model_path: str | Path = None,
                out_file: str | Path = None,
                al_strategy: str = None, 
-               round: int = None, 
+               round_num: int = None, 
                seed: int = None, 
-               batch_size: int=4096):
+               batch_size: int=2048):
     '''
-    expects either model_path or (al_strategy AND round AND seed)
+    expects either model_path or (al_strategy AND round_num AND seed)
     '''
     match dataset:
         case 'human':
@@ -246,4 +251,5 @@ def eval_model(dataset: str,
     if model_path is not None:
         return eval(arch=arch,model_path=model_path,out_file=out_file,batch_size=batch_size)
     else: # infer model path from other params
-        return eval(arch=arch,al_strategy=al_strategy,round=round,seed=seed,batch_size=batch_size)
+        return eval(arch=arch,al_strategy=al_strategy,round_num=round_num,seed=seed,batch_size=batch_size)
+    
