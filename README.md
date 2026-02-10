@@ -19,7 +19,7 @@ python -m dna_active_learning.setup /path/to/your/data/root
 ---
 **`models/`** - Implementation of DREAM Challenge model architectures (CNN, RNN, Attention) with training and evaluation utilities.
 
-**`sequence_selection/`** - Active learning strategies including MC Dropout, k-means clustering, LCMD, and ensemble methods. Contains the main AL loop implementation.
+**`sequence_selection/`** - Active learning strategies including ensemble-based methods, MC Dropout, k-means clustering, and LCMD. Contains the main AL loop implementation.
 
 **`data/`** - Demo datasets.
 
@@ -66,7 +66,7 @@ python -m dna_active_learning.sequence_selection.al_loop \
 - `--num-selected`: Sequences to select per round (default: 20,000)
 - `--start-round`: Resume from specific round (default: 1)
 
-### Train a Single Model
+### Train DREAM Challenge Model
 ```bash
 # Using AL experiment structure
 python -m dna_active_learning.models.train_model al <dataset> <arch> \
@@ -90,7 +90,7 @@ python -m dna_active_learning.models.train_model custom human attn \
 
 ### Select Sequences with Different Strategies
 
-**Ensemble** - Disagreement-based selection across multiple models.
+**Ensemble** - Disagreement-based selection across multiple models. Includes multi- and same-architecture ensembles with customizable size and configuration.
 ```bash
 # Multi-architecture ensemble
 python -m dna_active_learning.sequence_selection.ensemble multi \
@@ -101,19 +101,19 @@ python -m dna_active_learning.sequence_selection.ensemble same \
     yeast cnn --round 2 --seeds 1 2 3 4 5
 ```
 
-**MC Dropout (mcd)** - Uncertainty-based selection using Monte Carlo dropout to identify sequences where the model is most uncertain.
+**MC Dropout** - Uncertainty-based selection using Monte Carlo dropout to identify sequences where the model is most uncertain.
 ```bash
 python -m dna_active_learning.sequence_selection.mc_dropout \
     yeast cnn 2 42 --num_passes 50 --num_selected 20000
 ```
 
-**K-means (kmeans)** - Diversity-based selection using k-means clustering in embedding space to choose representative sequences.
+**K-means** - Diversity-based selection using k-means clustering in embedding space to choose representative sequences.
 ```bash
 python -m dna_active_learning.sequence_selection.diversity_strategies \
     yeast cnn kmeans 2 42 --num_selected 20000
 ```
 
-**LCMD (lcmd)** - Iteratively selects cluster centers by identifying the largest cluster and choosing its furthest point, prioritizing maximally different sequences.
+**LCMD** - Iteratively selects cluster centers by identifying the largest cluster and choosing its furthest point, prioritizing maximally different sequences.
 ```bash
 python -m dna_active_learning.sequence_selection.diversity_strategies \
     yeast cnn lcmd 2 42 --num_selected 20000
