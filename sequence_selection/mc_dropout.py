@@ -1,28 +1,34 @@
 import numpy as np
 import pandas as pd
-import torch, os, argparse
+import torch
+import argparse
 from models.model_utils import load_model
-from .utils import enable_dropout
+from .utils import enable_dropout, write_selections
 from models.dl_utils import prepare_dataloader
+from ..config import PROJECT_ROOT
 
-def mc_dropout(species: str,
-               arch: str,
-               round: int,
-               seed: int,
-               num_passes: int=5,
-               num_selected: int=20_000):
-    DATA_ROOT="" # replace with the root directory of your AL run
-    data_path = f"/{DATA_ROOT}/{species}/round_{round-1}/mcd/{arch}_{seed}/pool.txt"
-    seqsize = 200 if species == 'human' else 150
-    batch_size = 4096
+def mc_dropout(
+    dataset: str,
+    arch: str,
+    strategy: str, # for compatibility, unused
+    round_num: int,
+    seed: int,
+    num_passes: int=5,
+    num_selected: int=20_000,
+    batch_size: int=4096
+):
+    data_path = PROJECT_ROOT / dataset / f'round_{round_num}' / 'mcd' / f'{arch}_{seed}' / 'data' / 'pool.txt'
+    seqsize = 200 if dataset == 'human' else 150
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataloader = prepare_dataloader(data_path, 
-                                   seqsize=seqsize,
-                                   species=species,
-                                   batch_size=batch_size,
-                                   shuffle = False)
-    model=load_model(species=species,al_method='mcd',arch=arch,seed=seed,round=round-1)
+    dataloader = prepare_dataloader(
+        data_path, 
+        seqsize=seqsize,
+        dset=dataset,
+        batch_size=batch_size,
+        shuffle = False
+    )
+    model=load_model(dataset=dataset,al_strategy='mcd',arch=arch,seed=seed,round_num=round_num-1)
     model = model.to(device).eval()
     enable_dropout(model)
 
@@ -45,10 +51,8 @@ def mc_dropout(species: str,
     all_var=all_var.reshape(2,num_seqs)
     all_var=np.max(all_var,axis=0) # take max variance between sequence and reverse complement
 
-    sorted_var=np.sort(all_var)
-    threshold=sorted_var[-num_selected]
-    selected_idx=np.where(all_var>=threshold)[0]
-    new_df=df.iloc[selected_idx].copy()
+    df['var']=all_var
+    result_df=df.sort_values(by=['var'],ascending=False).head(num_selected)
 
     if num_selected == 20_000:
         folder_name = 'mcd'
@@ -56,32 +60,34 @@ def mc_dropout(species: str,
         n_selected=num_selected//1000
         folder_name = f"mcd_{n_selected}k"
 
-    out_path = f"/{DATA_ROOT}/{species}/round_{round}/{folder_name}/{arch}_{seed}"
-    if not os.path.exists(out_path):
-        os.makedirs(out_path)
-    file = f'{out_path}/selected.txt'
-    new_df.to_csv(file,sep='\t',header=None,index=None)
+    out_path = PROJECT_ROOT / dataset / f'round_{round_num}' / folder_name / f'{arch}_{seed}' / 'data' / 'selected.txt'
+    write_selections(out_path,result_df)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("species",choices=['yeast','human'])
+    parser.add_argument("dataset",choices=['yeast','human'])
     parser.add_argument("arch",choices=['cnn', 'rnn', 'attn'])
     parser.add_argument("round",type=int)
     parser.add_argument("seed", type=int)
     parser.add_argument("--num_passes",type=int,default=5)
     parser.add_argument("--num_selected",type=int,default=20_000)
+    parser.add_argument("--batch_size",type=int,default=4096)
     args = parser.parse_args()
 
     print("Received:")
     for name, value in vars(args).items():
         print(f"{name}: {value}")
 
-    mc_dropout(species=args.species,
-               arch=args.arch,
-               round=args.round,
-               seed=args.seed,
-               num_passes=args.num_passes,
-               num_selected=args.num_selected)
+    mc_dropout(
+        dataset=args.dataset,
+        arch=args.arch,
+        round_num=args.round,
+        seed=args.seed,
+        num_passes=args.num_passes,
+        num_selected=args.num_selected,
+        batch_size=args.batch_size
+    )
+    print("\nSelection complete!")
 
 if __name__ == "__main__":
     main()

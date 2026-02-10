@@ -1,6 +1,8 @@
 import numpy as np
 import cupy as cp
+import pandas as pd
 import torch, gc
+from pathlib import Path
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -34,6 +36,11 @@ class LayerInputExtractor:
 def free_gpu_mem():
     cp.get_default_memory_pool().free_all_blocks()
     gc.collect()
+
+def write_selections(path: str | Path, data: pd.DataFrame):
+    path=Path(path)
+    path.parent.mkdir(parents=True,exist_ok=True)
+    data.to_csv(path,sep='\t', index=False,header=False,columns=[0,1])
 
 def get_last_layer(model: nn.Module, 
                    dataloader: DataLoader, 
@@ -124,65 +131,29 @@ def _kmeans(data: np.ndarray, num_selected: int) -> np.ndarray:
             selected_idx[cluster_id] = global_idx[min_local_idx]
     return selected_idx
 
-def LCMD_cpu(data: np.ndarray, num_clusters: int) -> np.ndarray:
+def LCMD(data: np.ndarray,num_clusters: int, force_cpu: bool=False) -> np.ndarray:
+    device = 'gpu' if torch.cuda.is_available() and not force_cpu else 'cpu'
     n_points, n_dims = data.shape
     
-    centers_idx = np.empty(num_clusters, dtype=np.int32)
-    distances = np.full(n_points,np.inf)
-    closest_center=np.zeros(n_points,dtype=np.int32)
+    data = torch.from_numpy(data).to(device=device)
+
+    centers_idx = torch.empty(num_clusters, dtype=torch.int32,device=device)
+    distances = torch.full((n_points,),float('inf'),device=device)
+    closest_center=torch.zeros(n_points,dtype=torch.int32,device=device)
 
     # init
-    idx1 = np.random.choice(n_points)
+    idx1 = torch.randint(0,n_points,(1,),device=device)
     centers_idx[0]=idx1
-    distances = distance_np(data[idx1],data)
-
-    #select another center
-    centers_idx[1]=distances.argmax()
-    
-    for idx in tqdm(range(1,num_clusters-1)):
-        new_center = data[centers_idx[idx]]
-
-        #calculate distance to new center
-        distances_new = distance_np(new_center,data)
-        
-        mask = distances_new < distances
-        distances[mask] = distances_new[mask]
-        closest_center[mask]=idx
-
-        #find largest cluster
-        largest_cluster_id = np.bincount(closest_center, weights=distances).argmax()
-        
-        #find new center
-        mask2 = (closest_center == largest_cluster_id)
-        cluster_idx = np.where(mask2)[0]
-        
-        centers_idx[idx+1]=cluster_idx[distances[mask2].argmax()]
-
-    #return center idx
-    return centers_idx
-
-def LCMD_gpu(data: np.ndarray,num_clusters: int) -> np.ndarray:
-    n_points, n_dims = data.shape
-    
-    data_gpu = torch.from_numpy(data).to(device='cuda')
-
-    centers_idx = torch.empty(num_clusters, dtype=torch.int32,device='cuda')
-    distances = torch.full((n_points,),float('inf'),device='cuda')
-    closest_center=torch.zeros(n_points,dtype=torch.int32,device='cuda')
-
-    # init
-    idx1 = torch.randint(0,n_points,(1,),device='cuda')
-    centers_idx[0]=idx1
-    distances = distance_torch(data_gpu[idx1],data_gpu)
+    distances = distance_torch(data[idx1],data)
 
     #select another center
     centers_idx[1]=torch.argmax(distances)
     
     for idx in tqdm(range(1,num_clusters-1)):
-        new_center = data_gpu[centers_idx[idx]]
+        new_center = data[centers_idx[idx]]
 
         #calculate distance to new center
-        distances_new = distance_torch(new_center,data_gpu)
+        distances_new = distance_torch(new_center,data)
         
         mask = distances_new < distances
         distances[mask] = distances_new[mask]
@@ -200,9 +171,3 @@ def LCMD_gpu(data: np.ndarray,num_clusters: int) -> np.ndarray:
 
     #return center idx
     return centers_idx.cpu().numpy()
-
-def LCMD(data: np.ndarray, num_clusters: int, force_cpu: bool=False) -> np.ndarray:
-    if torch.cuda.is_available() and not force_cpu: # run on gpu if possible
-        return LCMD_gpu(data,num_clusters)
-    else:
-        return LCMD_cpu(data,num_clusters)
