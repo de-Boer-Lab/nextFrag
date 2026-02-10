@@ -1,54 +1,74 @@
 import torch
 import pandas as pd
 import numpy as np
+from pathlib import Path
 import itertools
-import argparse
 from tqdm import tqdm
 from models.model_utils import load_model
 from models.dl_utils import prepare_dataloader
+from .utils import write_selections
+from ..config import PROJECT_ROOT
 
-def max_expression(out_path: str,
-                    species: str,
-                    arch: str,
-                    seed: int,
-                    num_selected: int,
-                    lowest: bool=False):
-    DATA_ROOT=""
-    data_path=f'{DATA_ROOT}/{species}/round_0/common/pool.txt'
-    SEQSIZE=200 if species=='human' else 150
-    BATCH_SIZE=2048
-    generator = torch.Generator()
-    generator.manual_seed(seed)
+def max_expression(
+    dataset: str,
+    arch: str,
+    round_num: int,
+    seed: int,
+    num_selected: int,
+    batch_size: int=2048,
+    lowest: bool=False
+):
+    strategy='max_expr' if not lowest else 'min_expr'
+    data_path=PROJECT_ROOT / dataset / f'round_{round_num}' / strategy / f'{arch}_{seed}' / 'data' / 'pool.txt'
+    seqsize=200 if dataset=='human' else 150
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    dataloader=prepare_dataloader(
+        data_path,
+        seqsize=seqsize,
+        dset=dataset,
+        batch_size=batch_size,
+        shuffle=False
+    )
 
-    original = species == 'human'
-    model=load_model(species=species,arch=arch,al_method='common',seed=seed,round='0',original=original)
+    model=load_model(dataset=dataset,arch=arch,al_strategy=strategy,seed=seed,round_num=round_num)
     model.to(device).eval()
-    dl=prepare_dataloader(data_path,
-                        seqsize=SEQSIZE,
-                        species=species,
-                        batch_size=BATCH_SIZE,
-                        shuffle=False,
-                        generator=generator)
     
     df=pd.read_csv(data_path,header=None,sep='\t')
     num_seqs=len(df)
 
     all_preds=[]
     with torch.inference_mode():
-        for batch in dl:
+        for batch in dataloader:
             X=batch['x'].to(device)
             pred=model.predict(X)
             all_preds.append(pred.cpu().numpy())
     all_preds=np.concatenate(all_preds)
     all_preds=all_preds.reshape(2,num_seqs)
     all_preds=np.sum(all_preds,axis=0)/2 
-    df['pred']=all_preds
-    df_new=df.sort_values(by=['pred'],ascending=lowest)
-    result=df_new[:num_selected]
-    result.to_csv(out_path,sep='\t',index=None,header=None,columns=[0,1])
 
-def ism(file_path: str, out_path: str, dataset: str, job_id: int, window_sz: int=6, arch: str='rnn', seed: int=1):
+    df['pred']=all_preds
+    result_df=df.sort_values(by=['pred'],ascending=lowest).head(num_selected)
+
+    if num_selected == 20_000:
+        folder_name = strategy
+    else:
+        n_selected=num_selected//1000
+        folder_name = f"{strategy}_{n_selected}k"
+
+    out_path = PROJECT_ROOT / dataset / f'round_{round_num}' / folder_name / f'{arch}_{seed}' / 'data' / 'selected.txt'
+    write_selections(out_path,result_df)
+
+def ism(
+    file_path: str | Path, 
+    out_path: str | Path, 
+    dataset: str, 
+    job_id: int, 
+    seqs_per_job: int=200_000,
+    window_sz: int=6, 
+    arch: str='rnn', 
+    seed: int=1
+):
     df = pd.read_csv(file_path, header=None, sep='\t')
     df.columns=['seq','expr']
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -57,22 +77,18 @@ def ism(file_path: str, out_path: str, dataset: str, job_id: int, window_sz: int
         start_pos=0
         end_pos=200
         seqsize=200
-        seqs_per_job=50_000
-        original = True
         df= df[df['seq'].str.len()==seqsize]
     else: # yeast
         batch_size=16
         start_pos=57
         end_pos=137
         seqsize=150
-        seqs_per_job=500_000
-        original = False
         left_flank="AGTGCTAGCAGGAATGATGCAAAAGGTTCCCGATTCGAAC"
         df= df[df['seq'].str[:len(left_flank)]==left_flank]
         df= df[~df['seq'].str.contains('N')]
     df = df.iloc[job_id*seqs_per_job:(job_id+1)*seqs_per_job]
 
-    model=load_model(species=dataset,arch=arch,al_method='common',seed=seed,round='0',original=original)
+    model=load_model(dataset=dataset,arch=arch,al_strategy='common',seed=seed,round='0')
     model.to(device).eval()
 
     attrs = []
@@ -179,5 +195,3 @@ def compute_attributions(attrs,window_sz):
 
     result=np.stack((_mean,_max,max_window),axis=-1)
     return result
-
-
