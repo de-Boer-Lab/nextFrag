@@ -4,8 +4,8 @@ import torch
 import argparse
 from models.model_utils import load_model
 from .utils import enable_dropout, write_selections
-from models.dl_utils import prepare_dataloader
-from ..config import PROJECT_ROOT
+from .dataloader import prepare_dataloader
+from dna_active_learning.config import PROJECT_ROOT
 
 def mc_dropout(
     dataset: str,
@@ -52,16 +52,16 @@ def mc_dropout(
     all_var=np.max(all_var,axis=0) # take max variance between sequence and reverse complement
 
     df['var']=all_var
-    result_df=df.sort_values(by=['var'],ascending=False).head(num_selected)
-
-    if num_selected == 20_000:
-        folder_name = 'mcd'
-    else:
-        n_selected=num_selected//1000
-        folder_name = f"mcd_{n_selected}k"
-
-    out_path = PROJECT_ROOT / dataset / f'round_{round_num}' / folder_name / f'{arch}_{seed}' / 'data' / 'selected.txt'
-    write_selections(out_path,result_df)
+    df=df.sort_values(by=['var'],ascending=False).head(num_selected)
+    write_selections(
+        df, 
+        dataset=dataset,
+        strategy='mcd',
+        round_num=round_num,
+        num_selected=num_selected,
+        arch=arch,
+        seed=seed
+    )
 
 def main():
     parser = argparse.ArgumentParser()

@@ -1,11 +1,11 @@
 import torch
 import argparse
 from pathlib import Path
-from .dl_utils import prepare_dataloader
+from sequence_selection.dataloader import prepare_dataloader
+from sequence_selection.evaluation import eval_model
 from .trainer import Trainer
 from .model_utils import init_model
-from .evaluation import eval_model
-from ..config import PROJECT_ROOT
+from dna_active_learning.config import PROJECT_ROOT
 
 def train_al_model(
     dataset: str, 
@@ -94,7 +94,7 @@ def train_model(
     train_dl = prepare_dataloader(
         train_path, 
         seqsize=seqsize,
-        dataset=dataset,
+        dset=dataset,
         batch_size=train_batch_sz,
         shuffle=True,
         generator=generator
@@ -102,7 +102,7 @@ def train_model(
     val_dl = prepare_dataloader(
         val_path, 
         seqsize=seqsize, 
-        dataset=dataset,
+        dset=dataset,
         batch_size=val_batch_sz,
         shuffle=False
     )

@@ -1,10 +1,19 @@
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+import numpy as np
+import cupy as cp
 import pandas as pd
 import argparse
+import os
 from pathlib import Path
+from tqdm import tqdm
+from cuml.cluster import KMeans
+from sklearn.cluster import MiniBatchKMeans
 from models.model_utils import load_model
-from models.dl_utils import prepare_dataloader
-from .utils import IPCA, _kmeans, LCMD, write_selections
-from ..config import PROJECT_ROOT
+from .dataloader import prepare_dataloader
+from .utils import get_last_layer, free_gpu_mem, free_gpu_mem_gc, distance_torch, distance_np, write_selections
+from dna_active_learning.config import PROJECT_ROOT
 
 def diversity_al(
     dataset: str,
@@ -46,15 +55,115 @@ def diversity_al(
 
     df=pd.read_csv(data_path,sep='\t',header=None)
     df=df.iloc[selected_idx]
+    write_selections(
+        df, 
+        dataset=dataset,
+        strategy=strategy,
+        round_num=round_num,
+        num_selected=num_selected,
+        arch=arch,
+        seed=seed
+    )
 
-    if num_selected == 20_000:
-        folder_name = strategy
+def IPCA(model: nn.Module, 
+         dataloader: DataLoader, 
+         n_components: int, 
+         batch_size: int=4096): 
+    if torch.cuda.is_available():
+        gpu = True
+        device=torch.device("cuda")  
+        from cuml.decomposition import IncrementalPCA 
     else:
-        n_selected=num_selected//1000
-        folder_name = f"{strategy}_{n_selected}k"
+        gpu = False
+        device=torch.device("cpu")
+        from sklearn.decomposition import IncrementalPCA
 
-    out_path = PROJECT_ROOT / dataset / f'round_{round_num}' / folder_name / f'{arch}_{seed}' / 'data' / 'selected.txt'
-    write_selections(out_path,df)
+    ipca = IncrementalPCA(n_components=n_components, whiten=True, batch_size=batch_size)
+    for batch in get_last_layer(model=model,
+                                dataloader=dataloader,
+                                device=device):
+        if batch.shape[0] >= n_components:
+            ipca.partial_fit(batch)
+            if gpu:
+                free_gpu_mem()
+    
+    n_samples=len(dataloader.dataset)//2
+    results=cp.empty((n_samples,n_components)) if gpu else np.empty((n_samples,n_components))
+    for i, batch in enumerate(get_last_layer(model=model,
+                                             dataloader=dataloader, 
+                                             device=device)):
+        results[i*batch_size:min((i+1)*batch_size, n_samples),:]=ipca.transform(batch)
+    
+    if gpu:
+        results=cp.asnumpy(results)
+
+    del ipca
+    if gpu:
+        free_gpu_mem_gc()
+        
+    return results
+
+def _kmeans(data: np.ndarray, num_selected: int) -> np.ndarray:
+    if torch.cuda.is_available():
+        kmeans = KMeans(n_clusters=num_selected)
+        clustered=kmeans.fit(data)
+        centers = kmeans.cluster_centers_
+        labels = kmeans.labels_
+    else: 
+        centers, labels, inertia = MiniBatchKMeans(data,n_clusters=num_selected)
+
+    selected_idx = np.zeros(centers.shape[0])
+    for cluster_id in range(centers.shape[0]):
+        mask = labels == cluster_id
+        cluster_points = data[mask]
+
+        if cluster_points.shape[0] > 0:
+            distances = distance_np(centers[cluster_id],cluster_points)
+            min_local_idx = np.argmin(distances)
+            global_idx = np.arange(data.shape[0])[mask]
+            selected_idx[cluster_id] = global_idx[min_local_idx]
+    return selected_idx
+
+def LCMD(data: np.ndarray,num_clusters: int, force_cpu: bool=False) -> np.ndarray:
+    device = 'gpu' if torch.cuda.is_available() and not force_cpu else 'cpu'
+    n_points, n_dims = data.shape
+    
+    data = torch.from_numpy(data).to(device=device)
+
+    centers_idx = torch.empty(num_clusters, dtype=torch.int32,device=device)
+    distances = torch.full((n_points,),float('inf'),device=device)
+    closest_center=torch.zeros(n_points,dtype=torch.int32,device=device)
+
+    # init
+    idx1 = torch.randint(0,n_points,(1,),device=device)
+    centers_idx[0]=idx1
+    distances = distance_torch(data[idx1],data)
+
+    #select another center
+    centers_idx[1]=torch.argmax(distances)
+    
+    for idx in tqdm(range(1,num_clusters-1)):
+        new_center = data[centers_idx[idx]]
+
+        #calculate distance to new center
+        distances_new = distance_torch(new_center,data)
+        
+        mask = distances_new < distances
+        distances[mask] = distances_new[mask]
+        closest_center[mask]=idx
+
+        #find largest cluster
+        cluster_sizes = torch.bincount(closest_center, weights=distances)
+        largest_cluster_id = torch.argmax(cluster_sizes)
+        
+        #find new center
+        mask2 = (closest_center == largest_cluster_id)
+        cluster_idx = torch.where(mask2)[0]
+        
+        centers_idx[idx+1]=cluster_idx[torch.argmax(distances[mask2])]
+
+    #return center idx
+    return centers_idx.cpu().numpy()
 
 def main():
     parser = argparse.ArgumentParser()

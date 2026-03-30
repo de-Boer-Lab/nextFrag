@@ -11,7 +11,7 @@ The loop consists of three steps per round:
 
 import argparse
 from models.train_model import train_al_model
-from .update_train_and_pool import update_train_and_pool
+from .utils import update_train_and_pool
 from .mc_dropout import mc_dropout
 from .diversity_strategies import diversity_al
 

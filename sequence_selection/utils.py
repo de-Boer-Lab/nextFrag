@@ -3,11 +3,122 @@ import cupy as cp
 import pandas as pd
 import torch, gc
 from pathlib import Path
+from typing import List, Optional
 from torch import nn
 from torch.utils.data import DataLoader
-from tqdm import tqdm
-from cuml.cluster import KMeans
-from sklearn.cluster import MiniBatchKMeans
+from dna_active_learning.config import PROJECT_ROOT
+
+def update_train_and_pool(
+    dataset: str,
+    current_round: int,
+    al_strategy: str,
+    arch: str,
+    seed: int,
+    num_rounds: int=3
+):
+    """
+    Update training and pool data between active learning rounds.
+    
+    Assumes the AL directory structure:
+    PROJECT_ROOT/{dataset}/round_{round}/{al_strategy}/{arch}_{seed}/data/
+    containing: selected.txt, train.txt, pool.txt
+    
+    Args:
+        dataset: Dataset name ('yeast' or 'human')
+        current_round: The round of selection that just finished
+        al_strategy: Active learning strategy name
+        arch: Model architecture name
+        seed: Random seed for this run
+        num_rounds: Total number of rounds in the experiment
+    """
+    dataset_root = PROJECT_ROOT / dataset
+    
+    if current_round == 1:
+        prev_train = dataset_root / "round_0" / "common" / "train.txt"
+        prev_pool = dataset_root / "round_0" / "common" / "pool.txt"
+    else:
+        prev_data_dir = (dataset_root / f"round_{current_round - 1}" / 
+                         al_strategy / f"{arch}_{seed}" / "data")
+        prev_train = prev_data_dir / "train.txt"
+        prev_pool = prev_data_dir / "pool.txt"
+
+    curr_data_dir = (
+        dataset_root / f"round_{current_round}" / 
+        al_strategy / f"{arch}_{seed}" / "data"
+    )
+    curr_selected = curr_data_dir / "selected.txt"
+    curr_train = curr_data_dir / "train.txt"
+    curr_pool = curr_data_dir / "pool.txt"
+    curr_data_dir.mkdir(parents=True, exist_ok=True)
+
+    update_train(
+        prev_train=prev_train,
+        selected=curr_selected,
+        curr_train=curr_train
+    )
+    if current_round < num_rounds:
+        update_pool(
+            prev_pool=prev_pool,
+            selected=curr_selected,
+            curr_pool=curr_pool
+        )
+    if current_round > 1:
+        prev_train.unlink(missing_ok=True)
+        prev_pool.unlink(missing_ok=True)
+
+def update_train(prev_train: str | Path,
+                 selected: str | Path,
+                 curr_train: str | Path):
+    with open(curr_train, "w") as f:
+        for in_file in [prev_train, selected]:
+            with open(in_file, "r") as infile:
+                f.write(infile.read())
+
+def update_pool(prev_pool: str | Path, 
+                selected: str | Path, 
+                curr_pool: str | Path):
+    with open(selected, "r") as f:
+        selected_seqs = set(f.readlines()) 
+
+    with open(prev_pool, "r") as f1, open(curr_pool, "w") as f2:
+        for line in f1:
+            if line not in selected_seqs:  
+                f2.write(line)
+        
+def write_selections(
+    result_df: pd.DataFrame,
+    dataset: str,
+    strategy: str,
+    round_num: int,
+    num_selected: int = 20_000,
+    arch: str = None,
+    seed: int = None,
+    symlinks: Optional[List[str]] = None,
+):
+    arch = arch if arch is not None else "model"
+    seed = seed if seed is not None else 0
+
+    if num_selected == 20_000:
+        folder_name = strategy
+    else:
+        folder_name = f"{strategy}_{num_selected // 1000}k"
+
+    run_dir = (
+        PROJECT_ROOT / dataset / f"round_{round_num}" / folder_name
+        / f"{arch}_{seed}"
+    )
+    out_path = run_dir / "data" / "selected.txt"
+    out_path.parent.mkdir(parents=True,exist_ok=True)
+    result_df.to_csv(out_path,sep='\t', index=False,header=False,columns=[0,1])
+
+    if symlinks:
+        for name in symlinks:
+            link = run_dir.parent / name
+            if not link.exists():
+                link.symlink_to(run_dir, target_is_directory=True)
+
+def _forward(model: nn.Module, dream_model: bool, X: torch.Tensor):
+    return model.predict(X) if dream_model else model(X)
 
 def enable_dropout(model: nn.Module):
     for m in model.modules():
@@ -34,13 +145,14 @@ class LayerInputExtractor:
         self.hook.remove()
 
 def free_gpu_mem():
+    torch.cuda.synchronize()
+    torch.cuda.empty_cache()
     cp.get_default_memory_pool().free_all_blocks()
-    gc.collect()
+    cp.get_default_pinned_memory_pool().free_all_blocks()
 
-def write_selections(path: str | Path, data: pd.DataFrame):
-    path=Path(path)
-    path.parent.mkdir(parents=True,exist_ok=True)
-    data.to_csv(path,sep='\t', index=False,header=False,columns=[0,1])
+def free_gpu_mem_gc():
+    free_gpu_mem()
+    gc.collect()
 
 def get_last_layer(model: nn.Module, 
                    dataloader: DataLoader, 
@@ -54,40 +166,6 @@ def get_last_layer(model: nn.Module,
             result=result.reshape((result.shape[0],-1))
             half_batch = result.shape[0]//2
             yield (result[:half_batch,:]+result[half_batch:,:])/2
-
-def IPCA(model: nn.Module, 
-         dataloader: DataLoader, 
-         n_components: int, 
-         batch_size: int=4096): 
-    if torch.cuda.is_available():
-        gpu = True
-        device=torch.device("cuda")  
-        from cuml.decomposition import IncrementalPCA 
-    else:
-        gpu = False
-        device=torch.device("cpu")
-        from sklearn.decomposition import IncrementalPCA
-
-    ipca = IncrementalPCA(n_components=n_components, whiten=True, batch_size=batch_size)
-    for batch in get_last_layer(model=model,
-                                dataloader=dataloader,
-                                device=device):
-        if batch.shape[0] >= n_components:
-            ipca.partial_fit(batch)
-            if gpu:
-                free_gpu_mem()
-    
-    n_samples=len(dataloader.dataset)//2
-    results=cp.empty((n_samples,n_components)) if gpu else np.empty((n_samples,n_components))
-    for i, batch in enumerate(get_last_layer(model=model,
-                                             dataloader=dataloader, 
-                                             device=device)):
-        results[i*batch_size:min((i+1)*batch_size, n_samples),:]=ipca.transform(batch)
-    
-    if gpu:
-        results=cp.asnumpy(results)
-        
-    return results
 
 def last_layer_features(dataloader: DataLoader,
                         model: nn.Module) -> np.ndarray: # CURRENTLY UNUSED
@@ -109,65 +187,3 @@ def distance_np(target: np.ndarray, X: np.ndarray) -> np.ndarray:
 
 def distance_torch(target: torch.Tensor,X: torch.Tensor) -> torch.Tensor:
     return torch.sum((target-X)**2,dim=1)
-
-def _kmeans(data: np.ndarray, num_selected: int) -> np.ndarray:
-    if torch.cuda.is_available():
-        kmeans = KMeans(n_clusters=num_selected)
-        clustered=kmeans.fit(data)
-        centers = kmeans.cluster_centers_
-        labels = kmeans.labels_
-    else: 
-        centers, labels, inertia = MiniBatchKMeans(data,n_clusters=num_selected)
-
-    selected_idx = np.zeros(centers.shape[0])
-    for cluster_id in range(centers.shape[0]):
-        mask = labels == cluster_id
-        cluster_points = data[mask]
-
-        if cluster_points.shape[0] > 0:
-            distances = distance_np(centers[cluster_id],cluster_points)
-            min_local_idx = np.argmin(distances)
-            global_idx = np.arange(data.shape[0])[mask]
-            selected_idx[cluster_id] = global_idx[min_local_idx]
-    return selected_idx
-
-def LCMD(data: np.ndarray,num_clusters: int, force_cpu: bool=False) -> np.ndarray:
-    device = 'gpu' if torch.cuda.is_available() and not force_cpu else 'cpu'
-    n_points, n_dims = data.shape
-    
-    data = torch.from_numpy(data).to(device=device)
-
-    centers_idx = torch.empty(num_clusters, dtype=torch.int32,device=device)
-    distances = torch.full((n_points,),float('inf'),device=device)
-    closest_center=torch.zeros(n_points,dtype=torch.int32,device=device)
-
-    # init
-    idx1 = torch.randint(0,n_points,(1,),device=device)
-    centers_idx[0]=idx1
-    distances = distance_torch(data[idx1],data)
-
-    #select another center
-    centers_idx[1]=torch.argmax(distances)
-    
-    for idx in tqdm(range(1,num_clusters-1)):
-        new_center = data[centers_idx[idx]]
-
-        #calculate distance to new center
-        distances_new = distance_torch(new_center,data)
-        
-        mask = distances_new < distances
-        distances[mask] = distances_new[mask]
-        closest_center[mask]=idx
-
-        #find largest cluster
-        cluster_sizes = torch.bincount(closest_center, weights=distances)
-        largest_cluster_id = torch.argmax(cluster_sizes)
-        
-        #find new center
-        mask2 = (closest_center == largest_cluster_id)
-        cluster_idx = torch.where(mask2)[0]
-        
-        centers_idx[idx+1]=cluster_idx[torch.argmax(distances[mask2])]
-
-    #return center idx
-    return centers_idx.cpu().numpy()

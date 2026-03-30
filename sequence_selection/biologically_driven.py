@@ -3,11 +3,12 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import itertools
+import argparse
 from tqdm import tqdm
-from models.model_utils import load_model
-from models.dl_utils import prepare_dataloader
+from models.model_utils import init_model, load_model
+from .dataloader import prepare_dataloader
 from .utils import write_selections
-from ..config import PROJECT_ROOT
+from dna_active_learning.config import PROJECT_ROOT
 
 def max_expression(
     dataset: str,
@@ -48,23 +49,23 @@ def max_expression(
     all_preds=np.sum(all_preds,axis=0)/2 
 
     df['pred']=all_preds
-    result_df=df.sort_values(by=['pred'],ascending=lowest).head(num_selected)
-
-    if num_selected == 20_000:
-        folder_name = strategy
-    else:
-        n_selected=num_selected//1000
-        folder_name = f"{strategy}_{n_selected}k"
-
-    out_path = PROJECT_ROOT / dataset / f'round_{round_num}' / folder_name / f'{arch}_{seed}' / 'data' / 'selected.txt'
-    write_selections(out_path,result_df)
+    df=df.sort_values(by=['pred'],ascending=lowest).head(num_selected)
+    write_selections(
+        df, 
+        dataset=dataset,
+        strategy=strategy,
+        round_num=round_num,
+        num_selected=num_selected,
+        arch=arch,
+        seed=seed
+    )
 
 def ism(
     file_path: str | Path, 
     out_path: str | Path, 
     dataset: str, 
     job_id: int, 
-    seqs_per_job: int=200_000,
+    seqs_per_job: int=500_000,
     window_sz: int=6, 
     arch: str='rnn', 
     seed: int=1
@@ -91,7 +92,8 @@ def ism(
     model=load_model(dataset=dataset,arch=arch,al_strategy='common',seed=seed,round='0')
     model.to(device).eval()
 
-    attrs = []
+    attrs = np.empty((len(df), end_pos - start_pos, 3), dtype=np.float32)
+    idx=0
     buffer = []
     for row in tqdm(df.itertuples()):
         seq = row.seq.upper()
@@ -99,27 +101,33 @@ def ism(
         buffer.append(X)
         if len(buffer)>=batch_size:
             X=torch.cat(buffer,dim=0)
-            y, y_ism = saturation_mutagenesis(model=model,
-                                              X=X,
-                                              start=start_pos,
-                                              end=end_pos,
-                                              device=device)
+            y, y_ism = saturation_mutagenesis(
+                model=model,
+                X=X,
+                start=start_pos,
+                end=end_pos,
+                device=device
+            )
             
             y_attr = y_ism - y[:, None, None] 
-            attrs.append(y_attr.squeeze().cpu().numpy())
+            n=len(buffer)
+            attrs[idx:idx+n] = y_attr.squeeze(-1).cpu().numpy()
+            idx += n
             buffer=[]
     if buffer:
         X=torch.cat(buffer,dim=0)
-        y, y_ism = saturation_mutagenesis(model=model,
-                                          X=X,
-                                          start=start_pos,
-                                          end=end_pos,
-                                          device=device)
+        y, y_ism = saturation_mutagenesis(
+            model=model,
+            X=X,
+            start=start_pos,
+            end=end_pos,
+            device=device
+        )
         
         y_attr = y_ism - y[:, None, None] 
-        attrs.append(y_attr.squeeze().cpu().numpy())
+        n=len(buffer)
+        attrs[idx:idx+n] = y_attr.squeeze(-1).cpu().numpy()
     
-    attrs=np.concatenate(attrs,axis=0)
     result=compute_attributions(attrs,window_sz)
     out_df = pd.concat([df[["seq"]].reset_index(drop=True),
                         pd.DataFrame(result,columns=['mean','max','window max'])],axis=1)
