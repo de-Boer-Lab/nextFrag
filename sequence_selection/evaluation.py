@@ -1,12 +1,12 @@
-import torch, csv, os, argparse
+import torch, csv, argparse
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from scipy.stats import pearsonr, spearmanr
 from collections import OrderedDict
-from .dl_utils import prepare_dataloader
-from .model_utils import load_model
-from ..config import PROJECT_ROOT
+from models.model_utils import load_model
+from .dataloader import prepare_dataloader
+from dna_active_learning.config import PROJECT_ROOT
 
 MODULE_DIR = Path(__file__).parent
 
@@ -123,9 +123,9 @@ def eval_human_model(arch: str,
                      round_num: int = None, 
                      seed: int = None, 
                      batch_size: int=2048):
-    test_path_ID = "data/human/demo_test.txt" # replace with actual path
-    test_path_OOD = "data/human/demo_test.txt"  # replace with actual path
-    test_path_SNV = "data/human/demo_test_snv.txt"  # replace with actual path 
+    test_path_ID = "data/human/demo_test.txt"
+    test_path_OOD = "data/human/demo_test.txt"
+    test_path_SNV = "data/human/demo_test_snv.txt"
     seqsize = 200
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -252,4 +252,25 @@ def eval_model(dataset: str,
         return eval(arch=arch,model_path=model_path,out_file=out_file,batch_size=batch_size)
     else: # infer model path from other params
         return eval(arch=arch,al_strategy=al_strategy,round_num=round_num,seed=seed,batch_size=batch_size)
-    
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dataset",choices=['yeast','human'])
+    parser.add_argument("arch",choices=['cnn', 'rnn', 'attn'])
+    parser.add_argument("--al_strategy",type=str)
+    parser.add_argument("--round",type=int)
+    parser.add_argument("--seed",type=int)
+    args = parser.parse_args()
+
+
+    print("Received:")
+    for name, value in vars(args).items():
+        print(f"  {name}: {value}")
+    model_dir = PROJECT_ROOT / args.dataset / f'round_{args.round}' / args.al_strategy / f'{args.arch}_{args.seed}' / 'model'
+    return eval_model(model_path=model_dir / 'model_best.pth',
+                      out_file= model_dir / 'results.txt',
+                      dataset=args.dataset,
+                      arch=args.arch)
+   
+if __name__=="__main__":
+    main()
