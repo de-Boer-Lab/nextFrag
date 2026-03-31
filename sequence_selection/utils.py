@@ -1,12 +1,16 @@
 import numpy as np
-import cupy as cp
 import pandas as pd
 import torch, gc
 from pathlib import Path
 from typing import List, Optional
 from torch import nn
 from torch.utils.data import DataLoader
-from dna_active_learning.config import PROJECT_ROOT
+from nextFrag.config import get_project_root
+
+try:
+    import cupy as cp
+except ImportError:
+    pass
 
 def update_train_and_pool(
     dataset: str,
@@ -31,7 +35,7 @@ def update_train_and_pool(
         seed: Random seed for this run
         num_rounds: Total number of rounds in the experiment
     """
-    dataset_root = PROJECT_ROOT / dataset
+    dataset_root = get_project_root() / dataset
     
     if current_round == 1:
         prev_train = dataset_root / "round_0" / "common" / "train.txt"
@@ -104,7 +108,7 @@ def write_selections(
         folder_name = f"{strategy}_{num_selected // 1000}k"
 
     run_dir = (
-        PROJECT_ROOT / dataset / f"round_{round_num}" / folder_name
+        get_project_root() / dataset / f"round_{round_num}" / folder_name
         / f"{arch}_{seed}"
     )
     out_path = run_dir / "data" / "selected.txt"

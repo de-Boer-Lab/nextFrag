@@ -5,7 +5,7 @@ from sequence_selection.dataloader import prepare_dataloader
 from sequence_selection.evaluation import eval_model
 from .trainer import Trainer
 from .model_utils import init_model
-from dna_active_learning.config import PROJECT_ROOT
+from nextFrag.config import get_project_root, DATASET_CONFIG, ARCH_CONFIG
 
 def train_al_model(
     dataset: str, 
@@ -28,9 +28,10 @@ def train_al_model(
         seed: Random seed for reproducibility
         **kwargs: Additional arguments passed to train_model()
     """
-    experiment_path = PROJECT_ROOT / dataset / f'round_{round_num}' / al_strategy / f'{arch}_{seed}'
-    train_path = experiment_path / 'data' / 'train.txt' 
-    val_path = PROJECT_ROOT / dataset / 'val.txt'
+    project_root = get_project_root()
+    experiment_path = project_root / dataset / f'round_{round_num}' / al_strategy / f'{arch}_{seed}'
+    train_path = experiment_path / 'data' / 'train.txt'
+    val_path = project_root / dataset / 'val.txt'
     model_dir = experiment_path / 'model'
     results_path = model_dir / 'results.txt'
     return train_model(
@@ -76,15 +77,17 @@ def train_model(
         lr: Learning rate (uses architecture default if None)
     """
     model_dir=Path(model_dir)
-    seqsize = 200 if dataset == 'human' else 150
+    seqsize = DATASET_CONFIG[dataset]['seqsize']
     if results_path is None:
         results_path = model_dir / 'results.txt'
     if train_batch_sz is None:
-        train_batch_sz = 32 if dataset == 'human' else 256
+        train_batch_sz = DATASET_CONFIG[dataset]['batch_sz']
     if val_batch_sz is None:
         val_batch_sz = 4096
     if lr is None:
-        lr = 0.001 if arch == 'attn' else 0.005
+        lr = ARCH_CONFIG[arch]['lr']
+    if num_epochs is None:
+        lr = ARCH_CONFIG[arch]['num_epochs']
 
     generator = torch.Generator()
     generator.manual_seed(seed)

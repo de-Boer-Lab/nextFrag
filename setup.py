@@ -14,7 +14,7 @@ def setup(root_dir=None):
         root_dir.mkdir(parents=True, exist_ok=True)
     
     # Create config directory and file
-    config_dir = Path.home() / '.dna_active_learning'
+    config_dir = Path.home() / '.nextFrag'
     config_dir.mkdir(exist_ok=True)
     
     config_file = config_dir / 'config.txt'

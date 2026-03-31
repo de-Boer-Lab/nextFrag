@@ -1,6 +1,6 @@
-# DNA Active Learning
+# nextFrag
 
-A framework for benchmarking active learning strategies on DNA sequence-to-expression models.
+A PyTorch-based framework for benchmarking active learning strategies on DNA sequence-to-expression models.
 
 ## Installation
 ---
@@ -17,7 +17,7 @@ python -m dna_active_learning.setup /path/to/your/data/root
 
 ## Repository Overview
 ---
-**`models/`** - Implementation of DREAM Challenge model architectures (CNN, RNN, Attention) with training and evaluation utilities.
+**`models/`** - Implementation of DREAM Challenge model architectures (CNN, RNN, Attention) with training utilities.
 
 **`sequence_selection/`** - Active learning strategies including ensemble-based methods, MC Dropout, k-means clustering, and LCMD. Contains the main AL loop implementation.
 

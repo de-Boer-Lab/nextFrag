@@ -2,17 +2,11 @@ import torch
 import torch.nn as nn
 from pathlib import Path
 from . import dream_models
-from ..config import PROJECT_ROOT
+from nextFrag.config import get_project_root, DATASET_CONFIG
 
 def init_model(dataset: str, arch: str) -> nn.Module:
-    match dataset:
-        case 'yeast':
-            seqsize=150
-            num_channels = 6
-        case 'human':
-            seqsize=200
-            num_channels = 5
-
+    seqsize=DATASET_CONFIG[dataset]['seqsize']
+    num_channels=DATASET_CONFIG[dataset]['in_channels']
     match arch:
         case 'rnn':
             return dream_models.DREAM_RNN(in_channels=num_channels,final_block=dataset, seqsize=seqsize)
@@ -23,12 +17,14 @@ def init_model(dataset: str, arch: str) -> nn.Module:
         case _:
             raise ValueError("Model architecture must be 'cnn','rnn', or 'attn'")
 
-def load_model(dataset: str,
-               arch: str,
-               path: str | Path = None, 
-               al_strategy: str = None,
-               seed: int = 42,
-               round_num: int = None) -> nn.Module:
+def load_model(
+    dataset: str,
+    arch: str,
+    path: str | Path = None, 
+    al_strategy: str = None,
+    seed: int = 42,
+    round_num: int = None,
+) -> nn.Module:
     '''
     expects either a path to a model.pth file OR 
     constructs path with round_num, al_strategy, seed
@@ -37,7 +33,7 @@ def load_model(dataset: str,
     if path is not None:
         filepath=path
     else: 
-        filepath = PROJECT_ROOT / dataset / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'model_best.pth'
+        filepath = get_project_root() / dataset / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'model_best.pth'
     if torch.cuda.is_available():
         model.load_state_dict(torch.load(filepath, weights_only=True))
     else: # cpu

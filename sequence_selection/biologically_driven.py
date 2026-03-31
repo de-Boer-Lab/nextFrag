@@ -5,10 +5,10 @@ from pathlib import Path
 import itertools
 import argparse
 from tqdm import tqdm
-from models.model_utils import init_model, load_model
+from models.model_utils import load_model
 from .dataloader import prepare_dataloader
 from .utils import write_selections
-from dna_active_learning.config import PROJECT_ROOT
+from nextFrag.config import get_project_root, DATASET_CONFIG
 
 def max_expression(
     dataset: str,
@@ -20,8 +20,8 @@ def max_expression(
     lowest: bool=False
 ):
     strategy='max_expr' if not lowest else 'min_expr'
-    data_path=PROJECT_ROOT / dataset / f'round_{round_num}' / strategy / f'{arch}_{seed}' / 'data' / 'pool.txt'
-    seqsize=200 if dataset=='human' else 150
+    data_path=get_project_root() / dataset / f'round_{round_num}' / strategy / f'{arch}_{seed}' / 'data' / 'pool.txt'
+    seqsize=DATASET_CONFIG[dataset]['seqsize']
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     dataloader=prepare_dataloader(

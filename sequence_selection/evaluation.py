@@ -6,7 +6,7 @@ from scipy.stats import pearsonr, spearmanr
 from collections import OrderedDict
 from models.model_utils import load_model
 from .dataloader import prepare_dataloader
-from dna_active_learning.config import PROJECT_ROOT
+from nextFrag.config import get_project_root
 
 MODULE_DIR = Path(__file__).parent
 
@@ -183,7 +183,7 @@ def eval_human_model(arch: str,
     if out_file is not None:
         result_file = out_file
     else:
-        result_file = PROJECT_ROOT / 'human' / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'results.txt'
+        result_file = get_project_root() / 'human' / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'results.txt'
     with open(result_file, 'w') as f:
         f.write(f"ID\t{final_result[0]}\n")
         f.write(f"OOD\t{final_result[1]}\n")
@@ -228,7 +228,7 @@ def eval_yeast_model(arch: str,
     if out_file is not None:
         result_file = out_file
     else:
-        result_file = PROJECT_ROOT / 'yeast' / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'results.txt'
+        result_file = get_project_root() / 'yeast' / f'round_{round_num}' / al_strategy / f'{arch}_{seed}' / 'model' / 'results.txt'
     evaluate_yeast_predictions(result,result_file=result_file)
 
 def eval_model(dataset: str, 
@@ -266,7 +266,7 @@ def main():
     print("Received:")
     for name, value in vars(args).items():
         print(f"  {name}: {value}")
-    model_dir = PROJECT_ROOT / args.dataset / f'round_{args.round}' / args.al_strategy / f'{args.arch}_{args.seed}' / 'model'
+    model_dir = get_project_root() / args.dataset / f'round_{args.round}' / args.al_strategy / f'{args.arch}_{args.seed}' / 'model'
     return eval_model(model_path=model_dir / 'model_best.pth',
                       out_file= model_dir / 'results.txt',
                       dataset=args.dataset,

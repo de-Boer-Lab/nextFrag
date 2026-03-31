@@ -2,18 +2,15 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 import numpy as np
-import cupy as cp
 import pandas as pd
 import argparse
-import os
 from pathlib import Path
 from tqdm import tqdm
-from cuml.cluster import KMeans
 from sklearn.cluster import MiniBatchKMeans
 from models.model_utils import load_model
 from .dataloader import prepare_dataloader
 from .utils import get_last_layer, free_gpu_mem, free_gpu_mem_gc, distance_torch, distance_np, write_selections
-from dna_active_learning.config import PROJECT_ROOT
+from nextFrag.config import get_project_root, DATASET_CONFIG
 
 def diversity_al(
     dataset: str,
@@ -29,8 +26,8 @@ def diversity_al(
     if strategy != 'kmeans' and strategy != 'lcmd':
         raise ValueError(f"Only k-means and LCMD are supported. Received {strategy}.")
 
-    data_path = PROJECT_ROOT / dataset / f'round_{round_num}' / strategy / f'{arch}_{seed}' / 'data' / 'pool.txt'
-    seqsize = 200 if dataset == 'human' else 150
+    data_path = get_project_root() / dataset / f'round_{round_num}' / strategy / f'{arch}_{seed}' / 'data' / 'pool.txt'
+    seqsize = DATASET_CONFIG[dataset]['seqsize']
 
     dataloader = prepare_dataloader(
         data_path, 
@@ -71,8 +68,9 @@ def IPCA(model: nn.Module,
          batch_size: int=4096): 
     if torch.cuda.is_available():
         gpu = True
-        device=torch.device("cuda")  
-        from cuml.decomposition import IncrementalPCA 
+        device=torch.device("cuda")
+        import cupy as cp
+        from cuml.decomposition import IncrementalPCA
     else:
         gpu = False
         device=torch.device("cpu")
@@ -105,12 +103,16 @@ def IPCA(model: nn.Module,
 
 def _kmeans(data: np.ndarray, num_selected: int) -> np.ndarray:
     if torch.cuda.is_available():
+        from cuml.cluster import KMeans
         kmeans = KMeans(n_clusters=num_selected)
-        clustered=kmeans.fit(data)
+        kmeans.fit(data)
         centers = kmeans.cluster_centers_
         labels = kmeans.labels_
-    else: 
-        centers, labels, inertia = MiniBatchKMeans(data,n_clusters=num_selected)
+    else:
+        kmeans = MiniBatchKMeans(n_clusters=num_selected)
+        kmeans.fit(data)
+        centers = kmeans.cluster_centers_
+        labels = kmeans.labels_
 
     selected_idx = np.zeros(centers.shape[0])
     for cluster_id in range(centers.shape[0]):

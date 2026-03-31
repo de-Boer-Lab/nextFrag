@@ -5,7 +5,7 @@ import argparse
 from models.model_utils import load_model
 from .utils import enable_dropout, write_selections
 from .dataloader import prepare_dataloader
-from dna_active_learning.config import PROJECT_ROOT
+from nextFrag.config import get_project_root, DATASET_CONFIG
 
 def mc_dropout(
     dataset: str,
@@ -17,8 +17,8 @@ def mc_dropout(
     num_selected: int=20_000,
     batch_size: int=4096
 ):
-    data_path = PROJECT_ROOT / dataset / f'round_{round_num}' / 'mcd' / f'{arch}_{seed}' / 'data' / 'pool.txt'
-    seqsize = 200 if dataset == 'human' else 150
+    data_path = get_project_root() / dataset / f'round_{round_num}' / 'mcd' / f'{arch}_{seed}' / 'data' / 'pool.txt'
+    seqsize = DATASET_CONFIG[dataset]['seqsize']
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataloader = prepare_dataloader(
