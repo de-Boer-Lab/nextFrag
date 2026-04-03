@@ -6,6 +6,7 @@ from scipy.stats import pearsonr, spearmanr
 from collections import OrderedDict
 from models.model_utils import load_model
 from .dataloader import prepare_dataloader
+from .utils import _forward
 from nextFrag.config import get_project_root
 
 MODULE_DIR = Path(__file__).parent
@@ -161,7 +162,7 @@ def eval_human_model(arch: str,
             predictions=[]
             for batch in dl:
                 X = batch["x"].to(device)
-                predictions.append(model.predict(X).cpu().numpy())
+                predictions.append(_forward(model, X).cpu().numpy())
         all_preds=np.concatenate(predictions,axis=0)
         all_preds=np.squeeze(all_preds)
         all_preds = average_fwd_rev_pred(data=all_preds)
@@ -220,7 +221,7 @@ def eval_yeast_model(arch: str,
         predictions=[]
         for batch in test_dl:
             X = batch["x"].to(device)
-            predictions.append(model.predict(X).cpu().numpy())
+            predictions.append(_forward(model, X).cpu().numpy())
     all_preds=np.concatenate(predictions,axis=0)
     all_preds=np.squeeze(all_preds)
     result = average_fwd_rev_pred(data=all_preds)

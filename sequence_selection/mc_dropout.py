@@ -3,7 +3,7 @@ import pandas as pd
 import torch
 import argparse
 from models.model_utils import load_model
-from .utils import enable_dropout, write_selections
+from .utils import enable_dropout, write_selections, _forward
 from .dataloader import prepare_dataloader
 from nextFrag.config import get_project_root, DATASET_CONFIG
 
@@ -42,7 +42,7 @@ def mc_dropout(
             model_preds=[]
 
             for _ in range(num_passes):
-                model_preds.append(model.predict(X))
+                model_preds.append(_forward(model, X))
             combined = torch.stack(model_preds).cpu().numpy()
             var = np.var(combined,axis=0)
             all_var.append(var)

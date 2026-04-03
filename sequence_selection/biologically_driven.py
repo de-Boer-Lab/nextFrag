@@ -7,7 +7,7 @@ import argparse
 from tqdm import tqdm
 from models.model_utils import load_model
 from .dataloader import prepare_dataloader
-from .utils import write_selections
+from .utils import write_selections, _forward
 from nextFrag.config import get_project_root, DATASET_CONFIG
 
 def max_expression(
@@ -42,7 +42,7 @@ def max_expression(
     with torch.inference_mode():
         for batch in dataloader:
             X=batch['x'].to(device)
-            pred=model.predict(X)
+            pred=_forward(model, X)
             all_preds.append(pred.cpu().numpy())
     all_preds=np.concatenate(all_preds)
     all_preds=all_preds.reshape(2,num_seqs)
@@ -77,13 +77,13 @@ def ism(
         batch_size=6
         start_pos=0
         end_pos=200
-        seqsize=200
+        seqsize=DATASET_CONFIG['human']['seqsize']
         df= df[df['seq'].str.len()==seqsize]
     else: # yeast
         batch_size=16
         start_pos=57
         end_pos=137
-        seqsize=150
+        seqsize=DATASET_CONFIG['yeast']['seqsize']
         left_flank="AGTGCTAGCAGGAATGATGCAAAAGGTTCCCGATTCGAAC"
         df= df[df['seq'].str[:len(left_flank)]==left_flank]
         df= df[~df['seq'].str.contains('N')]
@@ -161,7 +161,7 @@ def saturation_mutagenesis(model, X, start=0, end=-1, device='cuda'):
     dtype = next(model.parameters(), X).dtype
     
     with torch.inference_mode():
-        y = model.predict(X_all.to(device).type(dtype))
+        y = _forward(model, X_all.to(device).type(dtype))
 
     y0 = y[:N]
     y_hat = y[N:].view(N,end-start, 3, *y.shape[1:])

@@ -26,6 +26,7 @@ class Trainer:
         self.model_dir = Path(model_dir)
         self.model_dir.mkdir(parents=True, exist_ok=True)
         self.num_epochs = num_epochs
+        self.use_predict = hasattr(self.model, 'predict')
 
         div_factor = 25.0
         min_lr = lr / div_factor
@@ -76,7 +77,7 @@ class Trainer:
             for batch in tqdm(self.val_dataloader, desc="Validation"):
                 x = batch["x"].to(self.device)
                 y = batch["y"].to(self.device).float()
-                pred = self.model.predict(x).squeeze()
+                pred = self._forward(x).squeeze()
 
                 y_true.append(y.cpu().numpy())
                 y_pred.append(pred.cpu().numpy())
@@ -119,3 +120,8 @@ class Trainer:
         for file in ['optimizer_best.pth','scheduler_best.pth']:
             filepath = self.model_dir / file
             filepath.unlink() 
+
+    def _forward(self, X: torch.Tensor):
+        return self.model.predict(X) if self.use_predict else self.model(X)
+
+        

@@ -64,7 +64,7 @@ def ensemble_select(
     with torch.inference_mode():
         for batch in dataloader:
             X = batch["x"].to(device)
-            predictions = [_forward(m, dream_model, X) for m in models]
+            predictions = [_forward(m, X, dream_model) for m in models]
 
             if len(predictions) > 2:
                 combined = torch.stack(predictions, dim=0)

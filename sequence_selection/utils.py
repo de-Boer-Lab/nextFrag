@@ -121,8 +121,10 @@ def write_selections(
             if not link.exists():
                 link.symlink_to(run_dir, target_is_directory=True)
 
-def _forward(model: nn.Module, dream_model: bool, X: torch.Tensor):
-    return model.predict(X) if dream_model else model(X)
+def _forward(model: nn.Module, X: torch.Tensor, use_predict: bool = None):
+    if use_predict is None:
+        use_predict = hasattr(model, 'predict')
+    return model.predict(X) if use_predict else model(X)
 
 def enable_dropout(model: nn.Module):
     for m in model.modules():
