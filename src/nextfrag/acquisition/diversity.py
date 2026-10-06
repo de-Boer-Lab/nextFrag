@@ -58,7 +58,7 @@ def diversity_al(
     else:
         selected_idx = LCMD(post_pca, n_clusters=cfg.n_selected)
 
-    df = pd.read_csv(prev.pool_path, sep='\t', header=None)
+    df = pd.read_csv(prev.pool_path, sep='\t', header=None, dtype=str)
     df = df.iloc[selected_idx]
     write_selections(cfg, result_df=df)
 
@@ -139,7 +139,7 @@ def _kmeans(data: np.ndarray, n_selected: int) -> np.ndarray:
         centers = kmeans.cluster_centers_
         labels = kmeans.labels_
 
-    selected_idx = np.zeros(centers.shape[0])
+    selected_idx = []
     for cluster_id in range(centers.shape[0]):
         mask = labels == cluster_id
         cluster_points = data[mask]
@@ -147,8 +147,8 @@ def _kmeans(data: np.ndarray, n_selected: int) -> np.ndarray:
             distances = distance_np(centers[cluster_id], cluster_points)
             min_local_idx = np.argmin(distances)
             global_idx = np.arange(data.shape[0])[mask]
-            selected_idx[cluster_id] = global_idx[min_local_idx]
-    return selected_idx
+            selected_idx.append(global_idx[min_local_idx])
+    return np.array(selected_idx, dtype=int)
 
 
 def LCMD(data: np.ndarray, n_clusters: int, force_cpu: bool = False) -> np.ndarray:

@@ -41,7 +41,7 @@ def mc_dropout(
     model = model.to(device).eval()
     enable_dropout(model)
 
-    df = pd.read_csv(prev.pool_path, header=None, sep='\t')
+    df = pd.read_csv(prev.pool_path, header=None, sep='\t', dtype=str)
     num_seqs = len(df)
 
     all_var = []

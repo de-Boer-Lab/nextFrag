@@ -39,7 +39,7 @@ def ensemble_select(
     dataloader = build_dataloader(
         data_path, seqsize=seqsize, dataset=dataset, batch_size=batch_size, shuffle=False,
     )
-    df = pd.read_csv(data_path, header=None, sep="\t")
+    df = pd.read_csv(data_path, header=None, sep="\t", dtype=str)
     num_seqs = len(df)
 
     all_var = []
