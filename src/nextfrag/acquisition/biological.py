@@ -59,6 +59,7 @@ def _ism_attrs(
     seqs_per_job: int,
     arch: str,
     seed: int,
+    model_path: str | Path | None,
 ):
     """Run ISM on a subset of sequences (split across jobs for parallelism).
 
@@ -85,8 +86,9 @@ def _ism_attrs(
         df = df[~df['seq'].str.contains('N')]
     df = df.iloc[job_id * seqs_per_job:(job_id + 1) * seqs_per_job]
 
-    cfg = PathResolver(dataset=dataset, round_num=0, arch=arch, seed=seed)
-    model = load_model(path=cfg.model_path, dataset=dataset, arch=arch)
+    if model_path is None:
+        model_path = PathResolver(dataset=dataset, round_num=0, arch=arch, seed=seed).model_path
+    model = load_model(path=model_path, dataset=dataset, arch=arch)
     model.to(device).eval()
 
     attrs = np.empty((len(df), end_pos - start_pos, 3), dtype=np.float32)
@@ -125,12 +127,13 @@ def ism(
     window_sz: int = 6,
     arch: str = 'rnn',
     seed: int = 1,
+    model_path: str | Path | None = None,
 ):
     """Run in-silico saturation mutagenesis (ISM) and write per-sequence summaries.
 
     Writes a TSV with columns: seq, mean, max, window_max.
     """
-    df, attrs = _ism_attrs(file_path, dataset, job_id, seqs_per_job, arch, seed)
+    df, attrs = _ism_attrs(file_path, dataset, job_id, seqs_per_job, arch, seed, model_path)
     result = compute_attributions(attrs, window_sz)
     out_df = pd.concat([df[["seq"]].reset_index(drop=True),
                         pd.DataFrame(result, columns=['mean', 'max', 'window max'])], axis=1)
@@ -145,13 +148,14 @@ def ism_raw(
     seqs_per_job: int = 500_000,
     arch: str = 'rnn',
     seed: int = 1,
+    model_path: str | Path | None = None,
 ):
     """Run ISM and write raw per-nucleotide effects.
 
     Writes an npz with `attrs` (N, L, 3) float32 of `mutant - wildtype`
     predictions and `seqs` (N,) giving the row order.
     """
-    df, attrs = _ism_attrs(file_path, dataset, job_id, seqs_per_job, arch, seed)
+    df, attrs = _ism_attrs(file_path, dataset, job_id, seqs_per_job, arch, seed, model_path)
     np.savez(out_path, attrs=attrs, seqs=df['seq'].to_numpy().astype(str))
 
 
@@ -255,6 +259,7 @@ def main():
     parser.add_argument('--seqs-per-job', type=int, default=500_000)
     parser.add_argument('--window-sz', type=int, default=6)
     parser.add_argument('--raw', action='store_true')
+    parser.add_argument('--model-path', type=str)
 
     args = parser.parse_args()
 
@@ -273,6 +278,7 @@ def main():
             seqs_per_job=args.seqs_per_job,
             arch=args.arch,
             seed=args.seed,
+            model_path=args.model_path,
         )
         if args.raw:
             ism_raw(**ism_kwargs)
