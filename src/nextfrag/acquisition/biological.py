@@ -52,20 +52,19 @@ def max_expression(
     write_selections(cfg, result_df=df)
 
 
-def ism(
+def _ism_attrs(
     file_path: str | Path,
-    out_path: str | Path,
     dataset: str,
     job_id: int,
-    seqs_per_job: int = 500_000,
-    window_sz: int = 6,
-    arch: str = 'rnn',
-    seed: int = 1,
+    seqs_per_job: int,
+    arch: str,
+    seed: int,
 ):
-    """Run in-silico saturation mutagenesis (ISM) on a subset of sequences.
-    Supports splitting across jobs for parallelism.
+    """Run ISM on a subset of sequences (split across jobs for parallelism).
 
-    Writes a TSV with columns: seq, mean, max, window_max.
+    Returns (df, attrs): the filtered sequences and raw `mutant - wildtype`
+    predictions of shape (N, end_pos - start_pos, 3). The last axis holds the
+    3 non-wildtype bases at each position, in ascending channel order (A,G,C,T).
     """
     df = pd.read_csv(file_path, header=None, sep='\t')
     df.columns = ['seq', 'expr']
@@ -114,10 +113,46 @@ def ism(
         n = len(buffer)
         attrs[idx:idx + n] = y_attr.squeeze(-1).cpu().numpy()
 
+    return df, attrs
+
+
+def ism(
+    file_path: str | Path,
+    out_path: str | Path,
+    dataset: str,
+    job_id: int,
+    seqs_per_job: int = 500_000,
+    window_sz: int = 6,
+    arch: str = 'rnn',
+    seed: int = 1,
+):
+    """Run in-silico saturation mutagenesis (ISM) and write per-sequence summaries.
+
+    Writes a TSV with columns: seq, mean, max, window_max.
+    """
+    df, attrs = _ism_attrs(file_path, dataset, job_id, seqs_per_job, arch, seed)
     result = compute_attributions(attrs, window_sz)
     out_df = pd.concat([df[["seq"]].reset_index(drop=True),
                         pd.DataFrame(result, columns=['mean', 'max', 'window max'])], axis=1)
     out_df.to_csv(out_path, sep='\t', index=None)
+
+
+def ism_raw(
+    file_path: str | Path,
+    out_path: str | Path,
+    dataset: str,
+    job_id: int,
+    seqs_per_job: int = 500_000,
+    arch: str = 'rnn',
+    seed: int = 1,
+):
+    """Run ISM and write raw per-nucleotide effects.
+
+    Writes an npz with `attrs` (N, L, 3) float32 of `mutant - wildtype`
+    predictions and `seqs` (N,) giving the row order.
+    """
+    df, attrs = _ism_attrs(file_path, dataset, job_id, seqs_per_job, arch, seed)
+    np.savez(out_path, attrs=attrs, seqs=df['seq'].to_numpy().astype(str))
 
 
 def _edit_distance_one(X, start, end):
@@ -219,6 +254,7 @@ def main():
     parser.add_argument('--job-id', type=int, default=0)
     parser.add_argument('--seqs-per-job', type=int, default=500_000)
     parser.add_argument('--window-sz', type=int, default=6)
+    parser.add_argument('--raw', action='store_true')
 
     args = parser.parse_args()
 
@@ -229,16 +265,19 @@ def main():
     if args.ism:
         if not args.file_path or not args.out_path:
             parser.error('--ism requires --file-path and --out-path')
-        ism(
+        ism_kwargs = dict(
             file_path=args.file_path,
             out_path=args.out_path,
             dataset=args.dataset,
             job_id=args.job_id,
             seqs_per_job=args.seqs_per_job,
-            window_sz=args.window_sz,
             arch=args.arch,
             seed=args.seed,
         )
+        if args.raw:
+            ism_raw(**ism_kwargs)
+        else:
+            ism(window_sz=args.window_sz, **ism_kwargs)
         print("\nISM complete!")
     else:
         if args.round is None:
